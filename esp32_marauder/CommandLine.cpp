@@ -512,6 +512,14 @@ void CommandLine::runCommand(String input) {
         upload_dest = BOTH_UPLOAD;
 
       if (upload_dest > -1) {
+        if (!sd_obj.supported) {
+          Serial.println("SD Card not detected");
+          return;
+        }
+
+        sd_obj.sd_files->clear();
+        sd_obj.listDirToLinkedList(sd_obj.sd_files);
+
         String ssid = settings_obj.loadSetting<String>("ClientSSID");
         String pw = settings_obj.loadSetting<String>("ClientPW");
 
