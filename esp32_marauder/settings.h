@@ -58,6 +58,7 @@ class Settings {
     const char* getSettingType(const char* key);
     String setting_index_to_name(int i);
     int getNumberSettings();
+    bool ensureStringSettings(const char* const* names, int count);
 
     String getSettingsString();
     //bool createDefaultSettings(fs::FS &fs, bool spec = false, uint8_t index = 0, String typeStr = "bool", String name = "");
