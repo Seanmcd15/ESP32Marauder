@@ -1,5 +1,42 @@
 #include "settings.h"
 
+namespace {
+constexpr const char* SETTINGS_PATH = "/settings.json";
+constexpr const char* SETTINGS_TEMP_PATH = "/settings.json.tmp";
+constexpr const char* SETTINGS_BACKUP_PATH = "/settings.json.bak";
+
+bool replaceSettingsFile(fs::FS& fs, const String& contents) {
+  fs.remove(SETTINGS_TEMP_PATH);
+
+  File temporaryFile = fs.open(SETTINGS_TEMP_PATH, FILE_WRITE);
+  if (!temporaryFile) {
+    return false;
+  }
+
+  const size_t written = temporaryFile.print(contents);
+  temporaryFile.close();
+  if (written != contents.length()) {
+    fs.remove(SETTINGS_TEMP_PATH);
+    return false;
+  }
+
+  fs.remove(SETTINGS_BACKUP_PATH);
+  if (!fs.rename(SETTINGS_PATH, SETTINGS_BACKUP_PATH)) {
+    fs.remove(SETTINGS_TEMP_PATH);
+    return false;
+  }
+
+  if (!fs.rename(SETTINGS_TEMP_PATH, SETTINGS_PATH)) {
+    fs.rename(SETTINGS_BACKUP_PATH, SETTINGS_PATH);
+    fs.remove(SETTINGS_TEMP_PATH);
+    return false;
+  }
+
+  fs.remove(SETTINGS_BACKUP_PATH);
+  return true;
+}
+}
+
 // ---------------------------------------------------------------------------
 // _buildCache — called once after json_settings_string is loaded/updated.
 // Parses the JSON exactly once and fills every field of _cache.
@@ -50,6 +87,12 @@ bool Settings::begin() {
     return false;
   }
 
+  if (!SPIFFS.exists(SETTINGS_PATH) && SPIFFS.exists(SETTINGS_BACKUP_PATH) &&
+      !SPIFFS.rename(SETTINGS_BACKUP_PATH, SETTINGS_PATH)) {
+    return false;
+  }
+  SPIFFS.remove(SETTINGS_TEMP_PATH);
+
   File settingsFile;
 
   // SPIFFS.remove("/settings.json"); // NEED TO REMOVE THIS LINE
@@ -74,10 +117,20 @@ bool Settings::begin() {
   String json_string;
   DynamicJsonDocument jsonBuffer(JSON_SETTING_SIZE);
   DeserializationError error = deserializeJson(jsonBuffer, settingsFile);
-  if (error)
+  settingsFile.close();
+  if (error) {
     Serial.println(error.f_str());
+    if (SPIFFS.exists(SETTINGS_BACKUP_PATH)) {
+      SPIFFS.remove(SETTINGS_PATH);
+      if (SPIFFS.rename(SETTINGS_BACKUP_PATH, SETTINGS_PATH)) {
+        return this->begin();
+      }
+    }
+    return false;
+  }
 
   serializeJson(jsonBuffer, json_string);
+  SPIFFS.remove(SETTINGS_BACKUP_PATH);
 
   this->json_settings_string = json_string;
 
@@ -365,6 +418,54 @@ int Settings::getNumberSettings() {
   deserializeJson(json, this->json_settings_string);
 
   return json["Settings"].size();
+}
+
+bool Settings::ensureStringSettings(const char* const* names, int count) {
+  DynamicJsonDocument json(JSON_SETTING_SIZE);
+  if (deserializeJson(json, this->json_settings_string)) {
+    return false;
+  }
+
+  bool changed = false;
+  for (int name_index = 0; name_index < count; ++name_index) {
+    bool found = false;
+    for (int setting_index = 0; setting_index < (int)json["Settings"].size(); ++setting_index) {
+      const char* setting_name = json["Settings"][setting_index]["name"] | "";
+      if (strcmp(setting_name, names[name_index]) == 0) {
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      continue;
+    }
+
+    const int index = json["Settings"].size();
+    json["Settings"][index]["name"] = names[name_index];
+    json["Settings"][index]["type"] = "String";
+    json["Settings"][index]["value"] = "";
+    json["Settings"][index]["range"]["min"] = "";
+    json["Settings"][index]["range"]["max"] = "";
+    changed = true;
+  }
+
+  if (!changed) {
+    return true;
+  }
+
+  String settings_string;
+  if (serializeJson(json, settings_string) == 0) {
+    return false;
+  }
+
+  if (!replaceSettingsFile(SPIFFS, settings_string)) {
+    return false;
+  }
+
+  this->json_settings_string = settings_string;
+  this->_buildCache();
+  this->printJsonSettings(settings_string);
+  return true;
 }
 
 const char* Settings::getSettingType(const char* key) {

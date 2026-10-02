@@ -36,6 +36,7 @@ https://www.online-utility.org/image/convert/to/XBM
 #endif
 
 #include "settings.h"
+#include "settings_migration.h"
 #include "CommandLine.h"
 #include "lang_var.h"
 
@@ -337,13 +338,10 @@ void setup()
     #endif
   #endif
 
-  settings_obj.begin();
-
-  const char* type = settings_obj.getSettingType("wu");
-
-  if (type == nullptr || type[0] == '\0') {
-    Serial.println(F("Current settings format not supported. Installing new default settings..."));
-    settings_obj.createDefaultSettings(SPIFFS);
+  if (!settings_obj.begin()) {
+    Serial.println(F("Failed to load settings"));
+  } else if (!ensureCurrentSettings(settings_obj, SPIFFS)) {
+    Serial.println(F("Failed to update settings format"));
   }
 
   buffer_obj = Buffer();

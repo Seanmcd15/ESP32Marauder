@@ -10,6 +10,17 @@ on:
   pull_request:
 
 jobs:
+  settings_migration_test:
+    name: test settings migration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Run settings migration test
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror tests/settings_migration_test.cpp -o /tmp/settings_migration_test
+          /tmp/settings_migration_test
+
   compile_sketch:
     name: build ${{ matrix.board.name }}
     runs-on: ubuntu-latest
